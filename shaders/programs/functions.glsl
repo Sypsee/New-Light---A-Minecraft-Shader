@@ -94,7 +94,7 @@ vec3 lightningCalc(vec3 albedo)
     vec3 shadowColor = texture(shadowcolor0, fragShadowScreenSpace.xy).rgb;
 
     vec3 shadowMultiplier = vec3(1.0);
-    const int shadowFilterSize = 7;
+    const int shadowFilterSize = 1;
     float bias = max(0.05 * (1.0 - dot(normalWorldSpace, shadowLightDirection)), 0.005);
 
     float isInShadow = 0.0;
