@@ -1,3 +1,5 @@
+#include "utils.glsl"
+
 mat3 tbnNormalTangent(vec3 normal, vec3 tangent)
 {
     vec3 bitangent = cross(tangent, normal);
@@ -44,6 +46,71 @@ float calcFogFactor()
     return clamp(fogFactor, 0.0, 1.0);
 }
 
+#define SHADOW_QUALITY 2
+#define SHADOW_SOFTNESS 4
+
+vec3 distortShadowClipPos(vec3 shadowClipPos)
+{
+    float distortionFactor = length(shadowClipPos.xy);  
+    distortionFactor += 0.1;
+
+    shadowClipPos.xy /= distortionFactor;
+    shadowClipPos.z *= 0.5;
+    return shadowClipPos;
+}
+
+vec3 getShadow(vec3 shadowScreenPos)
+{
+    float transparentShadow = step(shadowScreenPos.z, texture(shadowtex0, shadowScreenPos.xy).r);
+    
+    if(transparentShadow == 1.0)
+    {
+        return vec3(1.0);
+    }
+
+    float opaqueShadow = step(shadowScreenPos.z, texture(shadowtex1, shadowScreenPos.xy).r);
+
+    if(opaqueShadow == 0.0)
+    {
+        return vec3(0.0);
+    }
+
+    vec4 shadowColor = texture(shadowcolor0, shadowScreenPos.xy);
+    return shadowColor.rgb * (1.0 - shadowColor.a);
+}
+
+vec3 getSoftShadow(vec4 shadowClipPos)
+{
+  const float range = SHADOW_SOFTNESS / 2; // how far away from the original position we take our samples from
+  const float increment = range / SHADOW_QUALITY; // distance between each sample
+
+  float noise = getNoise(texCoord).r;
+
+  float theta = noise * radians(360.0); // random angle using noise value
+  float cosTheta = cos(theta);
+  float sinTheta = sin(theta);
+
+  mat2 rotation = mat2(cosTheta, -sinTheta, sinTheta, cosTheta); // matrix to rotate the offset around the original position by the angle
+
+  vec3 shadowAccum = vec3(0.0); // sum of all shadow samples
+  int samples = 0;
+
+  for(float x = -range; x <= range; x += increment){
+    for (float y = -range; y <= range; y+= increment){
+      vec2 offset = rotation * vec2(x, y) / shadowMapResolution; // offset in the rotated direction by the specified amount. We divide by the resolution so our offset is in terms of pixels
+      vec4 offsetShadowClipPos = shadowClipPos + vec4(offset, 0.0, 0.0); // add offset
+      offsetShadowClipPos.z -= 0.001; // apply bias
+      offsetShadowClipPos.xyz = distortShadowClipPos(offsetShadowClipPos.xyz); // apply distortion
+      vec3 shadowNDCPos = offsetShadowClipPos.xyz / offsetShadowClipPos.w; // convert to NDC space
+      vec3 shadowScreenPos = shadowNDCPos * 0.5 + 0.5; // convert to screen space
+      shadowAccum += getShadow(shadowScreenPos); // take shadow sample
+      samples++;
+    }
+  }
+
+  return shadowAccum / float(samples); // divide sum by count, getting average shadow
+}
+
 vec3 lightningCalc(vec3 albedo)
 {
     vec4 specularData = texture(specular, texCoord);
@@ -80,48 +147,13 @@ vec3 lightningCalc(vec3 albedo)
     vec3 fragFeetPlayerSpace = vec3(gbufferModelViewInverse * vec4(viewSpacePosition, 1.0));
     vec3 fragWorldSpace = fragFeetPlayerSpace + cameraPosition;
     vec3 adjustedFragFeetPlayerSpace = fragFeetPlayerSpace + 0.3 * worldGeoNormal;
-    vec3 fragShadowViewSpace = (shadowModelView * vec4(adjustedFragFeetPlayerSpace, 1.0)).xyz;
-    vec4 fragHomegenousSpace = shadowProjection * vec4(fragShadowViewSpace, 1.0);
-    vec3 fragShadowNDCSpace = fragHomegenousSpace.xyz / fragHomegenousSpace.w;
-    float distanceFromPlayerShadowNDC = length(fragShadowNDCSpace.xy);
-    vec3 distortedShadowNDCSpace = vec3(fragShadowNDCSpace.xy / (distanceFromPlayerShadowNDC + 0.1), fragShadowNDCSpace.z);
-    vec3 fragShadowScreenSpace = distortedShadowNDCSpace * 0.5 + 0.5;
 
     vec3 reflectionDirection = reflect(shadowLightDirection, normalWorldSpace);
     vec3 viewDirection = normalize(cameraPosition - fragWorldSpace);
+    vec3 shadowViewPos = (shadowModelView * vec4(fragFeetPlayerSpace, 1.0)).xyz;
+    vec4 shadowClipPos = shadowProjection * vec4(shadowViewPos, 1.0);
 
-    float isInNonColoredShadow = step(fragShadowScreenSpace.z, texture(shadowtex1, fragShadowScreenSpace.xy).r);
-    vec3 shadowColor = texture(shadowcolor0, fragShadowScreenSpace.xy).rgb;
-
-    vec3 shadowMultiplier = vec3(1.0);
-    const int shadowFilterSize = 1;
-    float bias = max(0.05 * (1.0 - dot(normalWorldSpace, shadowLightDirection)), 0.005);
-
-    float isInShadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(shadowtex0, 0);
-    for(int x = -shadowFilterSize/2; x <= shadowFilterSize/2; ++x)
-    {
-        for(int y = -shadowFilterSize/2; y <= shadowFilterSize/2; ++y)
-        {
-            vec2 offset = vec2(x, y) * texelSize;
-            float depth = texture(shadowtex0, fragShadowScreenSpace.xy + offset).x;
-
-            isInShadow += depth + bias > fragShadowScreenSpace.z ? 1.0 : 0.0;
-        }
-    }
-    isInShadow /= float(pow(shadowFilterSize,2));
-
-    if (isInShadow == 0.0 && length(viewSpacePosition) < 70)
-    {
-        if (isInNonColoredShadow == 0.0)
-        {
-            shadowMultiplier = vec3(isInShadow);
-        }
-        else
-        {
-            shadowMultiplier = shadowColor;
-        }
-    }
+    vec3 shadow = getSoftShadow(shadowClipPos);
 
     vec3 ambientLightDirection = worldGeoNormal;
     vec3 ambientLight = (blockLight + 0.25 * skyLight) * max(dot(ambientLightDirection, normalWorldSpace), 0.0);
@@ -129,11 +161,11 @@ vec3 lightningCalc(vec3 albedo)
     vec3 finalColor = vec3(1.0);
     if (round(mcEntity.x) == 69 || round(mcEntity.x) == 72)
     {
-        finalColor = albedo * skyLight * max(shadowMultiplier, ambientLight);
+        finalColor = albedo * skyLight * max(shadow, ambientLight);
     }
     else
     {
-        finalColor = albedo * ambientLight + skyLight * shadowMultiplier * brdf(shadowLightDirection, viewDirection, roughness, normalWorldSpace, albedo, metallic, reflectance);
+        finalColor = albedo * ambientLight + skyLight * shadow * brdf(shadowLightDirection, viewDirection, roughness, normalWorldSpace, albedo, metallic, reflectance);
     }
     finalColor = mix(fogColor, finalColor, calcFogFactor());
 

@@ -30,21 +30,22 @@ in vec2 texcoord;
 
 #define ABSORPTION 0.5
 #define LIGHT_ABSORPTION 1.0
-#define SHAPE_TEX_SIZE 512
-#define EROSION_TEX_SIZE 256
+#define SHAPE_TEX_SIZE 4096.0
+#define EROSION_TEX_SIZE 2048.0
 
 float coverage = 0.2;
 const float densityMultiplier = 0.5;
 const vec3 cloudPos = vec3(0.0,200.0,0.0);
-const vec3 cloudSize = vec3(1500.0, 30.0, 1500.0);
+const vec3 cloudSize = vec3(10000.0, 30.0, 10000.0);
 
-const vec3 boundsMin = cloudPos - cloudSize / 2;
-const vec3 boundsMax = cloudPos + cloudSize / 2;
+const vec3 boundsMin = cloudPos - cloudSize / 2.0;
+const vec3 boundsMax = cloudPos + cloudSize / 2.0;
 
 vec3 cloudOffset = vec3(0,0,0);
-vec4 phaseParams = vec4(0.83, 0.3, 0.8, 0.15);
 
 const int numStepsLight = 10;
+
+#include "programs/utils.glsl"
 
 struct Ray
 {
@@ -78,20 +79,9 @@ float linearizeDepth(float depth, float near, float far) {
     return (near * far) / (depth * (near - far) + far);
 }
 
-float hg(float a, float g) {
-	float g2 = g*g;
-	return (1-g2) / (4*3.1415*pow(1+g2-2*g*(a), 1.5));
-}
-
-float phase(float a) {
-	float blend = .5;
-	float hgBlend = hg(a,phaseParams.x) * (1-blend) + hg(a,-phaseParams.y) * blend;
-	return phaseParams.z + hgBlend*phaseParams.w;
-}
-
 float calcDensity(vec3 rayPos)
 {
-	coverage = texture(noisetex, rayPos.xy + cloudSize.xy * worldTime * 100).r * 0.5;
+	coverage = texture(noisetex, rayPos.xy + cloudSize.xy * worldTime).r * 0.4;
 	vec3 uvw = rayPos * cloudSize * 0.001 + cloudOffset * 0.01;
 	float shapeDensity = texture(cloudShapeTex, uvw / SHAPE_TEX_SIZE).r;
 	float density = max(shapeDensity - (1.0 - coverage), 0) * densityMultiplier;
@@ -101,23 +91,6 @@ float calcDensity(vec3 rayPos)
 	density -= clamp(erosionDensity - 0.6, 0.0, 1.0);
 
 	return density;
-}
-
-vec4 getNoise(vec2 coord){
-  ivec2 screenCoord = ivec2(coord * vec2(viewWidth, viewHeight)); // exact pixel coordinate onscreen
-  ivec2 noiseCoord = screenCoord % 64; // wrap to range of noiseTextureResolution
-  return texelFetch(noisetex, noiseCoord, 0);
-}
-
-vec4 getNoise(in vec2 texcoord, int frame){
-  const float g = 1.6180339887498948482;
-  float a1 = 1/g;
-  float a2 = 1/pow(g, 2.0);
-
-  vec2 offset = vec2(mod(0.5 + a1 * frame, 1.0), mod(0.5 + a2 * frame, 1.0));
-  texcoord += offset;
-
-  return getNoise(texcoord);
 }
 
 float calcLightning(vec3 rayPos, const vec3 celestialDir)
@@ -155,16 +128,16 @@ void main() {
 	float depth = linearizeDepth(nonLinearDepth, near, 4*far);
 
 	vec2 hitPoints = BBoxIntersect(boundsMin, boundsMax, ray);
+	const float stepSize = hitPoints.y / 11;
 
 	vec3 startPoint = ray.origin + ray.dir * hitPoints.x;
+	startPoint += ray.dir * stepSize * getNoise(texcoord, frameCounter).r;
 	float distanceTravelled = 0;
 	float maxDist = min(depth-hitPoints.x, hitPoints.y);
 
-	const float stepSize = hitPoints.y / 11;
 	float lightEnergy = 0;
 	float totalTransmittance = 1;
 	vec3 rayPos = ray.origin;
-	rayPos += ray.dir * stepSize * getNoise(texcoord, frameCounter).r;
 
 	float phaseVal = phase(dot(ray.dir, celestialPos));
 

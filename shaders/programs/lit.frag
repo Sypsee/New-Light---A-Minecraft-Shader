@@ -10,6 +10,7 @@ uniform sampler2D specular;
 uniform sampler2D shadowtex0;
 uniform sampler2D shadowtex1;
 uniform sampler2D shadowcolor0;
+uniform sampler2D noisetex;
 
 uniform mat4 gbufferModelViewInverse;
 uniform mat4 shadowModelView;
@@ -21,6 +22,8 @@ uniform vec3 fogColor;
 
 uniform float rainStrength;
 uniform float alphaTestRef;
+uniform float viewWidth;
+uniform float viewHeight;
 
 in vec2 texCoord;
 in vec2 lightMapCoord;
@@ -30,8 +33,8 @@ in vec3 geoNormal;
 in vec4 tangent;
 in vec2 mcEntity;
 
-#define FOG_DENSITY 2.0
-#define FOG_END 500.0
+#define FOG_DENSITY 1.5
+#define FOG_END 400.0
 #define RAIN_FOG_STRENGTH 1.0
 
 #include "functions.glsl"
