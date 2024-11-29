@@ -44,7 +44,10 @@ const vec3 boundsMax = cloudPos + cloudSize / 2.0;
 vec3 cloudOffset = vec3(0,0,0);
 
 const int numStepsLight = 10;
+const int numStepsCloud = 10;
 
+#define noise
+#define utils
 #include "programs/utils.glsl"
 
 struct Ray
@@ -73,10 +76,6 @@ vec2 BBoxIntersect(const vec3 boxMin, const vec3 boxMax, const Ray r) {
 	float dstToBox = max(0.0, dstA);
 	float dstInsideBox = max(0.0, dstB - dstToBox);
 	return vec2(dstToBox, dstInsideBox);
-}
-
-float linearizeDepth(float depth, float near, float far) {
-    return (near * far) / (depth * (near - far) + far);
 }
 
 float calcDensity(vec3 rayPos)
@@ -128,7 +127,7 @@ void main() {
 	float depth = linearizeDepth(nonLinearDepth, near, 4*far);
 
 	vec2 hitPoints = BBoxIntersect(boundsMin, boundsMax, ray);
-	const float stepSize = hitPoints.y / 11;
+	const float stepSize = hitPoints.y / numStepsCloud;
 
 	vec3 startPoint = ray.origin + ray.dir * hitPoints.x;
 	startPoint += ray.dir * stepSize * getNoise(texcoord, frameCounter).r;

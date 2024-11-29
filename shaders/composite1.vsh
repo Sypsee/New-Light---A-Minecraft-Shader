@@ -1,8 +1,12 @@
-#version 120
+#version 140
 
-varying vec2 texcoord;
+in vec3 vaPosition;
+
+out vec2 texcoord;
 
 void main() {
-	gl_Position = ftransform();
 	texcoord = (gl_TextureMatrix[0] * gl_MultiTexCoord0).xy;
+    vec4 fragPosVec4 = gl_ModelViewMatrix * vec4(vaPosition, 1.0);
+	
+    gl_Position = gl_ProjectionMatrix * fragPosVec4;
 }

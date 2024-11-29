@@ -1,33 +1,30 @@
-#version 120
+#version 330 compatibility
 
-#define DRAW_SHADOW_MAP gcolor //Configures which buffer to draw to the screen [gcolor shadowcolor0 shadowtex0 shadowtex1]
+#include "programs/shadowbias.glsl"
+#define utils
+#include "programs/utils.glsl"
 
-/* const int colortex0Format = RGBA16F; */
+uniform sampler2D colortex0;
+uniform sampler2D depthtex0;
 
-uniform sampler2D gcolor;
-varying vec2 texcoord;
+uniform mat4 gbufferProjectionInverse;
 
-#define CONTRAST 1.35
-#define BRIGHTNESS 0.2
-#define SATURATION 1.2
+in vec2 texcoord;
 
-vec3 acesApprox(vec3 v)
+/* RENDERTARGETS: 0 */
+layout(location = 0) out vec4 color;
+
+void main() 
 {
-    float a = 2.51f;
-    float b = 0.03f;
-    float c = 2.43f;
-    float d = 0.59f;
-    float e = 0.14f;
-    return (v*(a*v+b))/(v*(c*v+d)+e);
-}
+    color = texture(colortex0, texcoord);
 
-void main() {
-	vec3 color = texture2D(DRAW_SHADOW_MAP, texcoord).rgb;
-	color = CONTRAST * (color - 0.5) + 0.5 + BRIGHTNESS;
-	float luminance = color.r * 0.2125 + color.g * 0.7153 + color.b * 0.07121;
-	color = mix(vec3(luminance), color, SATURATION);
-	color = acesApprox(color);
+    float depth = texture(depthtex0, texcoord).r;
+    if(depth == 1.0)
+    {
+        return;
+    }
 
-	/* DRAWBUFFERS:0 */
-	gl_FragData[0] = vec4(color, 1.0); //gcolor
+    vec3 NDCPos = vec3(texcoord.xy, depth) * 2.0 - 1.0;
+    vec3 viewPos = projectAndDivide(gbufferProjectionInverse, NDCPos);
+
 }

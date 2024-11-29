@@ -33,10 +33,6 @@ in vec3 geoNormal;
 in vec4 tangent;
 in vec2 mcEntity;
 
-#define FOG_DENSITY 1.5
-#define FOG_END 400.0
-#define RAIN_FOG_STRENGTH 1.0
-
 #include "functions.glsl"
 
 void main()
